@@ -21,6 +21,7 @@ from video_qc.claude_checker import DEFAULT_MODEL, QCReport, run_qc
 from video_qc.frame_extractor import Frame, FrameExtractionError, extract_frames
 
 SEVERITY_MARK = {"low": "·", "medium": "⚠", "high": "✖"}
+STATUS_MARK = {"met": "✓", "partially_met": "◐", "not_met": "✗", "cannot_judge": "?"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video", required=True, type=Path, help="AI 生成的视频文件")
     parser.add_argument("--ref", required=True, type=Path, nargs="+",
                         help="参照物实拍照片（可多张）")
+    prompt_group = parser.add_mutually_exclusive_group()
+    prompt_group.add_argument("--prompt", default=None,
+                              help="生成该视频所用的原始 prompt 文本")
+    prompt_group.add_argument("--prompt-file", type=Path, default=None,
+                              help="从文件读取原始 prompt（utf-8）")
     parser.add_argument("--frames", type=int, default=5, help="抽帧数量（默认 5）")
     parser.add_argument("--seed", type=int, default=None,
                         help="随机种子，用于复现抽帧位置")
@@ -47,6 +53,8 @@ def check_env(args: argparse.Namespace) -> None:
     for ref in args.ref:
         if not ref.is_file():
             errors.append(f"参照图片不存在: {ref}")
+    if args.prompt_file is not None and not args.prompt_file.is_file():
+        errors.append(f"prompt 文件不存在: {args.prompt_file}")
     has_cred = (os.environ.get("ANTHROPIC_API_KEY")
                 or os.environ.get("ANTHROPIC_AUTH_TOKEN")
                 or (Path.home() / ".config" / "anthropic").exists())
@@ -62,8 +70,11 @@ def check_env(args: argparse.Namespace) -> None:
 def print_summary(report: QCReport, frames: list[Frame]) -> None:
     ts = {f.index: f.timestamp for f in frames}
     print("\n" + "=" * 60)
-    print(f"总体质量分: {report.overall_score}/10"
-          f"    发现缺陷: {'是' if report.has_defects else '否'}")
+    line = (f"画面质量分: {report.overall_score}/10"
+            f"    发现缺陷: {'是' if report.has_defects else '否'}")
+    if report.prompt_adherence_score is not None:
+        line += f"    Prompt 实现度: {report.prompt_adherence_score}/10"
+    print(line)
     print("=" * 60)
     print(f"\n【总体评价】\n{report.overall_assessment}")
     print(f"\n【与参照物一致性】\n{report.reference_consistency}")
@@ -78,6 +89,14 @@ def print_summary(report: QCReport, frames: list[Frame]) -> None:
         for issue in finding.issues:
             mark = SEVERITY_MARK.get(issue.severity, "·")
             print(f"    {mark} [{issue.category}/{issue.severity}] {issue.description}")
+    if report.prompt_requirements:
+        print("\n【Prompt 实现度】")
+        if report.prompt_adherence:
+            print(f"  {report.prompt_adherence}")
+        for check in report.prompt_requirements:
+            mark = STATUS_MARK.get(check.status, "?")
+            print(f"  {mark} [{check.status}] {check.requirement}")
+            print(f"      {check.note}")
     print()
 
 
@@ -98,8 +117,13 @@ def main() -> None:
     for f in frames:
         print(f"  帧 #{f.index}  t={f.timestamp:.2f}s  -> {f.path}")
 
-    print(f"\n正在调用 Claude API（{args.model}）检测 ...")
-    report = run_qc(frames, args.ref, model=args.model)
+    prompt = args.prompt
+    if args.prompt_file is not None:
+        prompt = args.prompt_file.read_text(encoding="utf-8").strip()
+
+    print(f"\n正在调用 Claude API（{args.model}）检测 ..."
+          + ("（已提供生成 prompt）" if prompt else ""))
+    report = run_qc(frames, args.ref, model=args.model, prompt=prompt)
 
     print_summary(report, frames)
 
@@ -107,6 +131,7 @@ def main() -> None:
     report_path.write_text(json.dumps({
         "video": str(args.video),
         "references": [str(r) for r in args.ref],
+        "generation_prompt": prompt,
         "model": args.model,
         "seed": args.seed,
         "frames": [{"index": f.index, "timestamp": f.timestamp,

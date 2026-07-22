@@ -25,10 +25,19 @@ python3 -m venv .venv
 |---|---|
 | `--video` | AI 生成的视频文件（必填） |
 | `--ref` | 参照物实拍照片，可传多张（必填） |
+| `--prompt` | 生成该视频所用的原始 prompt 文本（可选） |
+| `--prompt-file` | 从文件读取原始 prompt，与 `--prompt` 二选一 |
 | `--frames` | 抽帧数量，默认 5 |
 | `--seed` | 随机种子，固定后可复现抽帧位置 |
 | `--model` | Claude 模型，默认 `claude-opus-4-8` |
 | `--out-dir` | 输出目录，默认 `output/` |
+
+提供原始 prompt 后，检测会额外做两件事：
+
+1. 把 prompt 拆解为逐条要求，逐条判断实现状态（met / partially_met / not_met /
+   cannot_judge——静态抽帧无法判断的动作、时序类要求会如实标注，不会乱猜），
+   并给出独立的 Prompt 实现度分数（0-10）
+2. 结合 prompt 语境判断缺陷：prompt 明确要求的风格化效果不会被误报为缺陷
 
 抽帧方式为分层随机：视频时长均分为 N 段，每段内随机取一个时间点，保证覆盖全片。
 

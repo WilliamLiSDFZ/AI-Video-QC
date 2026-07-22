@@ -31,7 +31,17 @@ SYSTEM_PROMPT = """你是一名专业的 AI 生成视频质量审核员。
 - 逐帧给出发现的问题；某帧没有问题就返回空的 issues 列表，不要凭空捏造问题
 - 描述问题时指明具体位置和表现，便于人工对照抽帧图片复核
 - 所有描述用中文
-- overall_score 为 0-10 的整数，10 表示完全逼真无缺陷，0 表示严重失真"""
+- overall_score 为 0-10 的整数，只评画面生成质量，10 表示完全逼真无缺陷，0 表示严重失真
+
+若用户提供了该视频的生成 prompt：
+- 把 prompt 拆解为一条条可独立核对的具体要求（主体、动作、场景、风格、镜头、文字等），逐条判断实现状态：
+  - met: 抽帧中可确认已实现
+  - partially_met: 部分实现或实现有偏差
+  - not_met: 抽帧中可确认未实现
+  - cannot_judge: 仅凭静态抽帧无法判断（如动作过程、时序、镜头运动、音频类要求），必须如实标注，禁止猜测
+- 结合 prompt 语境判断缺陷：prompt 明确要求的风格化效果（如卡通、夸张色彩）不算 artifact 缺陷；与 prompt 要求相悖之处要指出
+- prompt_adherence_score 为 0-10 的整数，只衡量 prompt 要求的实现程度（cannot_judge 的条目不计入扣分），与画面质量分互相独立
+若未提供生成 prompt：prompt_requirements 返回空列表，prompt_adherence 与 prompt_adherence_score 返回 null。"""
 
 
 class Issue(BaseModel):
@@ -47,13 +57,27 @@ class FrameFinding(BaseModel):
     issues: list[Issue] = Field(description="该帧发现的问题，无问题则为空列表")
 
 
+class RequirementCheck(BaseModel):
+    requirement: str = Field(description="从生成 prompt 中拆解出的一条具体要求（中文）")
+    status: Literal["met", "partially_met", "not_met", "cannot_judge"] = Field(
+        description="实现状态；静态抽帧无法判断的要求（动作过程、时序、音频等）标 cannot_judge")
+    note: str = Field(description="判断依据（中文），指明在哪些帧看到了什么")
+
+
 class QCReport(BaseModel):
     frame_findings: list[FrameFinding] = Field(description="逐帧检测结果，每帧一项")
     reference_consistency: str = Field(
         description="视频主体与参照物照片一致性的总体评估（中文）")
     overall_assessment: str = Field(description="视频整体生成质量的总体评价（中文）")
-    overall_score: int = Field(description="0-10 的整数质量分，10 为完全逼真无缺陷")
+    overall_score: int = Field(
+        description="0-10 的整数画面质量分，10 为完全逼真无缺陷")
     has_defects: bool = Field(description="是否发现任何缺陷")
+    prompt_requirements: list[RequirementCheck] = Field(
+        description="生成 prompt 拆解出的要求及逐条实现状态；未提供 prompt 时为空列表")
+    prompt_adherence: str | None = Field(
+        description="prompt 要求实现情况的总体评估（中文）；未提供 prompt 时为 null")
+    prompt_adherence_score: int | None = Field(
+        description="0-10 的整数 prompt 实现度分数；未提供 prompt 时为 null")
 
 
 def _image_block(path: Path) -> dict:
@@ -68,8 +92,13 @@ def _image_block(path: Path) -> dict:
 
 
 def run_qc(frames: list[Frame], refs: list[Path],
-           model: str = DEFAULT_MODEL) -> QCReport:
+           model: str = DEFAULT_MODEL, prompt: str | None = None) -> QCReport:
     content: list[dict] = []
+    if prompt:
+        content.append({
+            "type": "text",
+            "text": f"该视频由以下生成 prompt 产生（原文）：\n<generation_prompt>\n{prompt}\n</generation_prompt>",
+        })
     for i, ref in enumerate(refs, 1):
         content.append({"type": "text", "text": f"参照物实拍照片 #{i}:"})
         content.append(_image_block(ref))
@@ -79,10 +108,12 @@ def run_qc(frames: list[Frame], refs: list[Path],
             "text": f"视频抽帧 #{frame.index}（时间点 {frame.timestamp:.1f} 秒）:",
         })
         content.append(_image_block(frame.path))
-    content.append({
-        "type": "text",
-        "text": "请对照参照物照片，逐帧检测以上视频抽帧是否存在变形或不符合常理之处，输出结构化报告。",
-    })
+    instruction = ("请对照参照物照片，逐帧检测以上视频抽帧是否存在变形或不符合常理之处，"
+                   "输出结构化报告。")
+    if prompt:
+        instruction += ("同时把生成 prompt 拆解为逐条要求，判断每条的实现状态，"
+                        "并结合 prompt 语境判断哪些表现属于缺陷。")
+    content.append({"type": "text", "text": instruction})
 
     client = anthropic.Anthropic()  # 自动读取 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL 等
     response = client.messages.parse(
