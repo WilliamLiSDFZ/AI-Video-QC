@@ -1,0 +1,29 @@
+# AI-Video-QC 运行配置示例
+# 用法: python main.py --video x.mp4 --ref y.jpg --config config.example.yaml
+# 优先级: CLI 显式传参 > 本文件 > 内置默认值
+# 注意: video 和参照图不属于配置，必须通过命令行传入；
+#       密钥类（API key）不放这里，放 .env / 环境变量
+
+model: claude-opus-4-8   # Claude 模型
+frames: 5                # 抽帧数量
+seed: null               # 随机种子（如 42；null 表示每次随机）
+out_dir: output          # 输出目录
+
+# 生成视频的原始 prompt（两者只能设置其一；也可用 CLI --prompt / --prompt-file）
+prompt: null
+prompt_file: null
+
+prescreen:
+  enabled: true          # 是否启用 VBench 初筛
+  force: false           # 初筛不通过时是否仍继续 Claude 检测
+  timeout: 3600          # 初筛超时（秒）
+  # vbench_python: /opt/miniconda3/envs/vbench/bin/python  # 默认自动探测
+  dims:                  # 评测维度（VBench custom 模式支持的 6 个）
+    - subject_consistency
+    - background_consistency
+    - motion_smoothness
+    - dynamic_degree
+    - aesthetic_quality
+    - imaging_quality
+  thresholds: {}         # 覆盖默认阈值，如 { imaging_quality: 0.6 }
+                         # 注: 给 dynamic_degree 设阈值会让它参与判定（默认只报告）

@@ -1,5 +1,7 @@
 .idea/
 .venv/
+.venv-vbench/
+.env
 __pycache__/
 *.pyc
 output/
