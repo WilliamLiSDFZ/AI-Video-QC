@@ -12,12 +12,30 @@ VBench 初筛（本地模型，不花 API 费用）
 
 ## 安装
 
+推荐用**统一 conda 环境**，一次装齐主项目 + VBench 全部依赖：
+
+```bash
+# Linux（含 CUDA 机器）
+conda env create -f environment.yml
+conda activate ai-video-qc
+
+# macOS Apple Silicon（decord 需特殊处理，用脚本装）
+bash scripts/setup_env.sh
+conda activate ai-video-qc
+```
+
+> ⚠️ **环境必须是 Python 3.10**。VBench 依赖 `transformers==4.33.2`，其旧版
+> tokenizers 在 Python 3.12/3.13 下没有预编译轮子，安装会报
+> `error: can't find Rust compiler`。environment.yml 已固定 3.10，请勿改。
+
+不需要 VBench 初筛的话，也可以只装主项目（任意 Python ≥3.10）：
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-需要本机已安装 ffmpeg（`brew install ffmpeg`）。
+另需本机已安装 ffmpeg（macOS: `brew install ffmpeg`；Linux: `apt install ffmpeg`）。
 
 API 密钥放 `.env` 文件（参考 `.env.example`，已被 gitignore）：
 
@@ -95,34 +113,16 @@ cp config.example.yaml config.yaml
 
 **未安装 VBench 时初筛自动跳过**（打印提示），不影响主流程。
 
-### 安装 VBench 环境（独立于主 venv）
+### VBench 环境说明
 
-VBench 依赖较重（PyTorch + 模型权重约 2-4GB）且需要 Python 3.10，
-主管线通过子进程调用它，两个环境互不干扰。
+按「安装」小节创建统一环境 `ai-video-qc` 后即可直接使用——初筛检测到
+**当前解释器已装 vbench** 时自动启用，无需任何额外配置。
 
-**Linux / CUDA 机器（推荐）：**
-
-```bash
-conda create -n vbench python=3.10 -y
-conda activate vbench
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install vbench
-```
-
-**Apple Silicon Mac（CPU 运行，较慢）：**
+也支持旧的双环境模式（主项目 venv + 独立 VBench 环境），此时用环境变量
+指定 VBench 环境的解释器（可写在 `.env` 里）：
 
 ```bash
-conda create -n vbench python=3.10 -y
-conda activate vbench
-pip install torch torchvision          # CPU 版
-pip install vbench --no-deps           # 官方依赖里的 decord 在 arm64 上装不上
-pip install -r requirements-vbench.txt # 手动补齐依赖（decord 已换成 eva-decord）
-```
-
-装好后主管线会自动找到 conda env `vbench`；也可用环境变量显式指定解释器：
-
-```bash
-export VBENCH_PYTHON=/opt/miniconda3/envs/vbench/bin/python
+export VBENCH_PYTHON=/path/to/vbench-env/bin/python
 ```
 
 说明：
@@ -130,3 +130,19 @@ export VBENCH_PYTHON=/opt/miniconda3/envs/vbench/bin/python
 - 首次运行会自动下载各维度的模型权重到 `~/.cache/vbench`（GB 级）
 - 无 GPU 时自动用 CPU，单视频全 6 维在 CPU 上可能需要数分钟到十几分钟
 - 个别维度运行失败不影响其余维度出分，失败维度在报告中标注、不参与判定
+
+### 常见问题
+
+**安装时报 `Building wheel for tokenizers ... error: can't find Rust compiler`**
+
+环境的 Python 版本不是 3.10（多半是 3.12/3.13）。VBench 依赖
+`transformers==4.33.2`，其配套的旧版 tokenizers 没有 py3.12+ 的预编译轮子，
+pip 转源码编译才需要 Rust——而且旧版对 3.13 装了 Rust 也编不过。修法：
+
+```bash
+conda remove -n ai-video-qc --all -y   # 删掉版本不对的环境（名字按实际）
+conda env create -f environment.yml    # 用固定 3.10 的规格重建
+```
+
+**Linux 上不要套用 macOS 的 `--no-deps` 安装方式**——Linux 的 decord 有
+预编译轮子，直接 `pip install vbench`（environment.yml 已是这么做的）。

@@ -1,0 +1,23 @@
+# 统一 conda 环境：主项目 + VBench 全部依赖
+#
+# Linux（含 CUDA 机器）一条命令创建：
+#     conda env create -f environment.yml
+#     conda activate ai-video-qc
+#
+# macOS Apple Silicon 请改用: bash scripts/setup_env.sh
+# （官方依赖里的 decord 在 arm64 上无轮子，需要特殊处理）
+#
+# 注意：python 必须是 3.10 —— VBench 依赖 transformers==4.33.2，
+# 其旧版 tokenizers 在 py3.12+ 没有预编译轮子，安装会报
+# "can't find Rust compiler"。
+name: ai-video-qc
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - -r requirements.txt
+      - torch
+      - torchvision
+      - vbench
