@@ -22,6 +22,20 @@ def main() -> None:
     args = parser.parse_args()
 
     import torch
+
+    # PyTorch 2.6 起 torch.load 默认 weights_only=True，而 VBench 的 AMT
+    # （motion_smoothness）等旧权重里含 typing.OrderedDict 这类非白名单全局对象，
+    # 加载会直接 UnpicklingError。这些权重由 VBench 自己从官方地址下载到
+    # ~/.cache/vbench，来源可信，故在这个专跑 VBench 的子进程里把默认值改回去。
+    # 用 setdefault：显式传了 weights_only 的调用方仍按其意愿执行。
+    _torch_load = torch.load
+
+    def _torch_load_compat(*a, **kw):
+        kw.setdefault("weights_only", False)
+        return _torch_load(*a, **kw)
+
+    torch.load = _torch_load_compat
+
     import vbench as vbench_pkg
     from vbench import VBench
 

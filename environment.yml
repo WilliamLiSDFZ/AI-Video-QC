@@ -17,6 +17,10 @@ dependencies:
   - python=3.10
   - pip
   - pip:
+      # VBench 链路上的 openai-clip / pyiqa 仍 import pkg_resources，
+      # 新版 setuptools 已移除它（表现为 "UnImplemented dimension xxx,
+      # No module named 'pkg_resources'"），故固定在仍自带 pkg_resources 的版本。
+      - setuptools<81
       - -r requirements.txt
       - torch
       - torchvision

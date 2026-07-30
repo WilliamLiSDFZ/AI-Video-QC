@@ -1,6 +1,7 @@
 # VBench 依赖清单（供 Apple Silicon 上 `pip install vbench --no-deps` 后手动补齐用）
 # = VBench 官方 requirements.txt 去掉 decord、换成 eva-decord
 # 正常 Linux/CUDA 机器直接 `pip install vbench` 即可，无需本文件
+setuptools<81  # openai-clip / pyiqa 仍 import pkg_resources，新版 setuptools 已移除
 eva-decord
 Pillow
 numpy<2.0.0

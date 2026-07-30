@@ -35,7 +35,14 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-另需本机已安装 ffmpeg（macOS: `brew install ffmpeg`；Linux: `apt install ffmpeg`）。
+另需本机已安装 ffmpeg 和 unzip（VBench 的 dynamic_degree 维度下载 RAFT 权重后要解压）：
+
+```bash
+# macOS
+brew install ffmpeg          # unzip 系统自带
+# Linux（GCE / Debian 云镜像通常没有 unzip）
+sudo apt install -y ffmpeg unzip
+```
 
 API 密钥放 `.env` 文件（参考 `.env.example`，已被 gitignore）：
 
@@ -146,3 +153,25 @@ conda env create -f environment.yml    # 用固定 3.10 的规格重建
 
 **Linux 上不要套用 macOS 的 `--no-deps` 安装方式**——Linux 的 decord 有
 预编译轮子，直接 `pip install vbench`（environment.yml 已是这么做的）。
+
+**某些维度报 `UnImplemented dimension xxx, No module named 'pkg_resources'`**
+
+setuptools 太新。VBench 链路上的 openai-clip / pyiqa 仍 import `pkg_resources`，
+而新版 setuptools 已把它移除；VBench 的维度分发是 try/except import，导入失败
+就被吞成"维度未实现"。受影响的是所有走 CLIP 的维度（background_consistency、
+aesthetic_quality、imaging_quality）。修法：
+
+```bash
+pip install "setuptools<81"
+```
+
+**dynamic_degree 报 `FileNotFoundError: 'unzip'`**
+
+VBench 下载 RAFT 权重后调系统 `unzip` 解压，云主机镜像常常没装：
+`sudo apt install -y unzip`。
+
+**motion_smoothness 报 `UnpicklingError: Weights only load failed`**
+
+PyTorch 2.6 起 `torch.load` 默认 `weights_only=True`，VBench 的旧权重加载不了。
+`scripts/run_vbench.py` 已在子进程里把默认值改回 `False`（权重由 VBench 从官方
+地址下载到 `~/.cache/vbench`，来源可信）；报这个错说明代码是旧版，拉一下最新。
